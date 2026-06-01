@@ -9,7 +9,8 @@ def connexion_neo4j():
     user = (input("Votre identifiant pour neo4j : "))
     password = (input("Votre mot de passe neo4j : "))
 
-    URI = "neo4j://127.0.0.1:7687"
+    URI = "neo4j://127.0.0.1:7687" #si neo4j desktop 
+    # URI àchanger par "bolt://localhost:7687 si neo4j browser"
     AUTH = (user, password)
 
     return URI, AUTH
