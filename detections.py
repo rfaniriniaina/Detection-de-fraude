@@ -1,6 +1,7 @@
 import math
 import networkx as nx
 from collections import deque
+import matplotlib.pyplot as plt
 from neo4j import GraphDatabase
 from itertools import combinations
 
@@ -41,9 +42,11 @@ def est_une_clique(G, liste_sommets):
                 return False
     return True
 
-def detecter_clique_viaBFS(G, taille_min = 3):
+def detecter_et_classifier_viaBFS(G, taille_min = 3):
     cliques_globales = []
     noeuds_visites = set()
+
+    couleurs_nodes = {noeud: 'green' for noeud in G.nodes()}
 
     for noeud_depart in G.nodes():
         if noeud_depart in noeuds_visites:
@@ -83,60 +86,22 @@ def detecter_clique_viaBFS(G, taille_min = 3):
                         if deja_incluse == False:
                             cliques_globales.append(liste_combinaison)
                             clique_trouvee = True
+
+                            for n_clique in liste_combinaison:
+                                couleurs_nodes[n_clique] = 'red'
+
+                            #gestion de la peripherie
+                            for n_clique in liste_combinaison:
+                                for voisin in G.neighbors(n_clique):
+                                    if couleurs_nodes[voisin] != 'red':
+                                        couleurs_nodes[voisin] = 'orange'
                 
                 if clique_trouvee == True:
                     break
-    return cliques_globales
+    return couleurs_nodes
 
 
-def classifier_individu(G, cliques):
-    ensemble_sommet = list(G.nodes())  
-    liaison_forte = set()
-    liaison_moyenne = set()
-    liaison_faible = []
-
-    for chaque_clique in cliques:
-        for noeud in chaque_clique:
-            liaison_forte.add(noeud)
-
-    for noeud_fort in liaison_forte:
-        for voisin in G.neighbors(noeud_fort):
-            if voisin not in liaison_forte:
-                liaison_moyenne.add(voisin)
-
-    for individu in ensemble_sommet:
-        if individu not in liaison_forte and individu not in liaison_moyenne:
-            liaison_faible.append(individu)
-    
-    print("\n BILAN DE LA CLASSIFICATION DE L'ENSEMBLE DES INDIVIDUS (S)\n")
-    print(f"Nombre total d'individus dans l'univers S : {len(ensemble_sommet)}")
-
-    print(f"\n 1 . FORTE COHÉSION [{len(liaison_forte)} individus]")
-    print("  --> Font partie integrante d'une communauté parfaite (clique).")
-    print(f"    Liste des noeuds : {sorted(list(liaison_forte))}")
-
-    print(f"\n 2 . MOYENNE COHÉSION [{len(liaison_moyenne)} individus]")
-    print("  --> Connectés en ligne directe au coeur de la communauté (peripherie).")
-    print(f"    Liste des noeuds : {sorted(list(liaison_moyenne))}")
-
-    print(f"\n 3 . FAIBLE COHÉSION [{len(liaison_faible)} individus]")
-    print("  --> Liés au reste du réseau aleatoire, hors portée de la communauté")
-    print(f"    Liste des noeuds : {sorted(list(liaison_faible))}")
-
-    print("\nLISTE DES COMMUNAUTÉS (CLIQUES)\n")
-
-    if len(cliques) > 0:
-        compteur = 1
-        for c in cliques:
-            print(f" Communauté {compteur} (Taille {len(c)}) : {sorted(c)}")
-            compteur += compteur
-
-    else:
-        print("  Aucune clique de taille >= 3 n'a été décelée.")
-
-    return liaison_forte, liaison_moyenne
-
-def exporter_vers_neo4j(G, noeuds_fortes, noeuds_moyennes, URI, AUTH):
+def exporter_vers_neo4j(G, couleurs_nodes, URI, AUTH):
     print("\n Initialisation de la liaison avec l'instance Neo4j...")
 
     try:
@@ -146,9 +111,10 @@ def exporter_vers_neo4j(G, noeuds_fortes, noeuds_moyennes, URI, AUTH):
             session.run("MATCH (n) DETACH DELETE n")
 
             for noeud in G.nodes():
-                if noeud in noeuds_fortes:
+                statut = couleurs_nodes[noeud]
+                if statut == 'red':
                     session.run("CREATE (n:Individu:ForteCohesion {id: $noeud_id, cohesion: 'Forte (Clique)'})", noeud_id=int(noeud))
-                elif noeud in noeuds_moyennes:
+                elif statut == 'orange':
                     session.run("CREATE (n:Individu:MoyenneCohesion {id: $noeud_id, cohesion: 'Moyenne (Clique)'})", noeud_id=int(noeud))
                 else:
                     session.run("CREATE (n:Individu:FaibleCohesion {id: $noeud_id, cohesion: 'Faible (Clique)'})", noeud_id=int(noeud))
@@ -183,11 +149,8 @@ if __name__ == "__main__":
 
     #genertion et calcul
     graphe_analyse = generer_graphe_aleatoire(nb_sommets, p)
-    cliques_globales = detecter_clique_viaBFS(graphe_analyse, taille_min=3)
+   
+    dictionnaire_couleurs = detecter_et_classifier_viaBFS(graphe_analyse, taille_min=3)
+    exporter_vers_neo4j(graphe_analyse, dictionnaire_couleurs, neo4j_uri, neo4j_auth)
 
-    #classification de S
-    noeuds_fortes, noeuds_moyenne = classifier_individu(graphe_analyse, cliques_globales)
-
-    exporter_vers_neo4j(graphe_analyse, noeuds_fortes, noeuds_moyenne, neo4j_uri, neo4j_auth)
-
-    print("Executons: MATCH (n) RETURN n dans Neo4j ")
+    print("Exportation reussie. Executons: MATCH (n) RETURN n dans Neo4j ")
